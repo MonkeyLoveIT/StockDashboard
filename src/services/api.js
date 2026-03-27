@@ -99,6 +99,19 @@ export const marketApi = {
   }
 }
 
+// Notify API - 飞书提醒推送
+export const notifyApi = {
+  send: async ({ title, content }) => {
+    const res = await fetch(`${API_BASE}/notify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, content })
+    })
+    if (!res.ok) throw new Error('Failed to send notification')
+    return res.json()
+  }
+}
+
 // Screener API - 股票筛选
 export const screenerApi = {
   // 短线技术选股
