@@ -1,0 +1,14 @@
+{
+  "name": "stock-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "server": "node server/index.js",
+    "client": "cd src && npm run dev",
+    "install:all": "npm install && cd server && npm install && cd ../src && npm install"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
