@@ -1,0 +1,37 @@
+{
+  "schedules": [
+    {
+      "name": "盘前简报",
+      "schedule": "55 8 * * 1-5",
+      "modes": [
+        "oversold_rebound",
+        "uptrend"
+      ],
+      "limit": 20,
+      "enabled": true
+    },
+    {
+      "name": "午盘总结",
+      "schedule": "35 12 * * 1-5",
+      "modes": [
+        "hot_money",
+        "breakthrough"
+      ],
+      "limit": 20,
+      "enabled": true
+    },
+    {
+      "name": "收盘复盘",
+      "schedule": "15 15 * * 1-5",
+      "modes": [
+        "oversold_rebound",
+        "uptrend",
+        "hot_money",
+        "breakthrough",
+        "long_value"
+      ],
+      "limit": 20,
+      "enabled": true
+    }
+  ]
+}

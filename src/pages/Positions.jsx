@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
-import { Table, Button, Modal, Form, Input, InputNumber, Popconfirm, message, Space, Tag, Tooltip } from 'antd'
+import { Table, Button, Modal, Form, Input, InputNumber, Popconfirm, message, Space, Tag, Tooltip, AutoComplete } from 'antd'
 import { EyeOutlined, EyeInvisibleOutlined, StarOutlined, StarFilled, ReloadOutlined } from '@ant-design/icons'
-import { positionApi, quoteApi } from '../services/api'
+import { positionApi, quoteApi, searchApi } from '../services/api'
 import usePositionStore from '../stores/useStore'
 
 // 掩码辅助函数
@@ -23,6 +23,8 @@ const Positions = () => {
   const [editingId, setEditingId] = useState(null)
   const [masked, setMasked] = useState(false)
   const [form] = Form.useForm()
+  const [suggestions, setSuggestions] = useState([])
+  const [suggesting, setSuggesting] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -94,6 +96,32 @@ const Positions = () => {
     }
   }
 
+  // 搜索建议（支持代码或中文名）
+  const handleSearch = async (value) => {
+    if (!value || value.length < 1) { setSuggestions([]); return }
+    setSuggesting(true)
+    try {
+      const data = await searchApi.search(value)
+      setSuggestions(data.results || [])
+    } catch {
+      setSuggestions([])
+    } finally {
+      setSuggesting(false)
+    }
+  }
+
+  // 选择建议后自动填入代码和名称
+  const handleSelectSuggestion = (value, option) => {
+    const stock = suggestions.find(s => s.code === value || `${s.code}` === value)
+    if (stock) {
+      form.setFieldsValue({
+        code: stock.code,
+        name: stock.name
+      })
+    }
+    setSuggestions([])
+  }
+
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields()
@@ -106,6 +134,7 @@ const Positions = () => {
       }
       setModalVisible(false)
       form.resetFields()
+      setSuggestions([])
     } catch (error) {
       if (error.errorFields) {
         return
@@ -325,6 +354,7 @@ const Positions = () => {
         onCancel={() => {
           setModalVisible(false)
           form.resetFields()
+          setSuggestions([])
         }}
         okText="确定"
         cancelText="取消"
@@ -335,10 +365,22 @@ const Positions = () => {
             label="股票代码"
             rules={[{ required: true, message: '请输入股票代码' }]}
           >
-            <Input placeholder="如: 600000" disabled={!!editingId} />
+            <AutoComplete
+              options={suggestions.map(s => ({ value: s.code, label: `${s.code} ${s.name}` }))}
+              onSearch={handleSearch}
+              onSelect={handleSelectSuggestion}
+              onChange={() => {}}
+              placeholder="输入代码或名称搜索..."
+              disabled={!!editingId}
+              notFoundContent={suggesting ? '搜索中...' : '无结果'}
+              style={{ width: '100%' }}
+              filterOption={(input, option) =>
+                option.label.toLowerCase().includes(input.toLowerCase())
+              }
+            />
           </Form.Item>
           <Form.Item name="name" label="股票名称">
-            <Input placeholder="如: 浦发银行" />
+            <Input placeholder="从上方选择后自动填入，或手动输入" />
           </Form.Item>
           <Form.Item
             name="cost"

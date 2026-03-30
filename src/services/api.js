@@ -102,7 +102,7 @@ export const marketApi = {
 // Notify API - 飞书提醒推送
 export const notifyApi = {
   send: async ({ title, content }) => {
-    const res = await fetch(`${API_BASE}/notify`, {
+    const res = await fetch(`${API_BASE}/notify/notify`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ title, content })
@@ -114,25 +114,17 @@ export const notifyApi = {
 
 // Screener API - 股票筛选
 export const screenerApi = {
-  // 短线技术选股
-  short: async (params = {}) => {
-    const qs = new URLSearchParams(params).toString()
-    const res = await fetch(`${API_BASE}/screener/short?${qs}`)
+  // 新一代筛选引擎（支持多模式交集）
+  run: async (modes = ['oversold_rebound'], limit = 50) => {
+    const modeParams = (Array.isArray(modes) ? modes : [modes]).map(m => `mode=${m}`).join('&')
+    const res = await fetch(`${API_BASE}/screener/run?${modeParams}&limit=${limit}`)
     if (!res.ok) throw new Error('Failed to screen stocks')
     return res.json()
   },
-  // 低估价值选股
-  value: async (params = {}) => {
-    const qs = new URLSearchParams(params).toString()
-    const res = await fetch(`${API_BASE}/screener/value?${qs}`)
-    if (!res.ok) throw new Error('Failed to screen stocks')
-    return res.json()
-  },
-  // A+B综合筛选
-  combined: async (params = {}) => {
-    const qs = new URLSearchParams(params).toString()
-    const res = await fetch(`${API_BASE}/screener/combined?${qs}`)
-    if (!res.ok) throw new Error('Failed to screen stocks')
+  // 今日热门
+  hot: async (limit = 100) => {
+    const res = await fetch(`${API_BASE}/screener/hot?limit=${limit}`)
+    if (!res.ok) throw new Error('Failed to fetch hot stocks')
     return res.json()
   }
 }

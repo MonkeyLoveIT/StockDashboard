@@ -4,8 +4,8 @@ import fetch from 'node-fetch';
 const router = express.Router();
 
 // 环境变量（从进程环境读取，Gateway 启动时注入）
-const BOT_APP_ID = process.env.FEISHU_APP_ID || 'cli_a9328f245878dbce';
-const BOT_APP_SECRET = process.env.FEISHU_APP_SECRET || 'D2dQdTEEWmDjeOQWHBZMDcjTqmt5xPlj';
+const BOT_APP_ID = process.env.FEISHU_APP_ID || 'cli_a94ffe7c96b99bd2';
+const BOT_APP_SECRET = process.env.FEISHU_APP_SECRET || 'cqcK6F3CWh0WNW8otCih9ereCxR6s64L';
 const USER_OPEN_ID = process.env.FEISHU_USER_OPEN_ID || 'ou_53f73c5d32213fc809dc8ec322a5e4fe';
 
 // 获取 tenant access token
@@ -30,7 +30,7 @@ router.post('/notify', async (req, res) => {
     const token = await getTenantToken();
     const messageContent = `【StockDashboard】\n${title ? title + '\n' : ''}${content || ''}`;
 
-    const larkRes = await fetch('https://open.feishu.cn/open-apis/im/v1/messages', {
+    const larkRes = await fetch('https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,

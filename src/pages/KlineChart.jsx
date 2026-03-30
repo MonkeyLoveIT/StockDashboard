@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react'
-import { Select, Card, Spin, message, Button, Segmented, Alert } from 'antd'
+import { AutoComplete, Card, Spin, message, Button, Segmented, Alert } from 'antd'
 import { ReloadOutlined } from '@ant-design/icons'
 import ReactECharts from 'echarts-for-react'
-import { positionApi, klineApi } from '../services/api'
+import { positionApi, klineApi, searchApi } from '../services/api'
 
 const PERIOD_OPTIONS = [
   { label: '1分钟', value: '1min' },
@@ -52,6 +52,7 @@ const KlineChart = () => {
   const [loading, setLoading] = useState(false)
   const [period, setPeriod] = useState('d')
   const [fq, setFq] = useState('1')
+  const [suggestions, setSuggestions] = useState([])
 
   // Load positions on mount
   useEffect(() => {
@@ -82,6 +83,23 @@ const KlineChart = () => {
         setLoading(false)
       })
   }, [selectedCode, period, fq])
+
+  // 搜索建议（支持代码或中文名）
+  const handleStockSearch = async (value) => {
+    if (!value || value.length < 1) { setSuggestions([]); return }
+    try {
+      const data = await searchApi.search(value)
+      setSuggestions(data.results || [])
+    } catch {
+      setSuggestions([])
+    }
+  }
+
+  // 选择建议后填入股票代码
+  const handleStockSelect = (value) => {
+    setSelectedCode(value)
+    setSuggestions([])
+  }
 
   const handleRefresh = () => {
     if (!selectedCode) return
@@ -215,13 +233,18 @@ const KlineChart = () => {
       <Card className="mb-4">
         <div className="flex flex-wrap items-center gap-4">
           <span>选择股票:</span>
-          <Select
+          <AutoComplete
             value={selectedCode}
-            onChange={val => setSelectedCode(val)}
-            placeholder="选择持仓股票"
-            style={{ width: 200 }}
-            options={selectOptions}
-            loading={positions.length === 0}
+            onSearch={handleStockSearch}
+            onSelect={handleStockSelect}
+            onChange={val => {
+              setSelectedCode(val)
+              if (!val) setSuggestions([])
+            }}
+            options={suggestions.map(s => ({ value: s.code, label: `${s.code} ${s.name}` }))}
+            placeholder="输入股票代码或名称搜索"
+            style={{ width: 220 }}
+
           />
 
           <span style={{ marginLeft: 8 }}>K线周期:</span>

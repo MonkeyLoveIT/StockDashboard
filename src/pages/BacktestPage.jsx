@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react'
-import { Card, Row, Col, Select, Button, Statistic, Table, Tag, Space, Spin, message } from 'antd'
+import { Card, Row, Col, Select, Button, Statistic, Table, Tag, Space, Spin, message, AutoComplete, InputNumber } from 'antd'
 import { PlayCircleOutlined, BellOutlined } from '@ant-design/icons'
 import ReactECharts from 'echarts-for-react'
-import { positionApi, klineApi, notifyApi } from '../services/api'
+import { positionApi, klineApi, notifyApi, searchApi } from '../services/api'
 
 // ====== 指标计算 ======
 const calcMA = (klines, period) =>
@@ -196,6 +196,8 @@ const BacktestPage = () => {
   const [selectedCode, setSelectedCode] = useState(null)
   const [selectedStrategy, setSelectedStrategy] = useState('ma_cross')
   const [params, setParams] = useState({ fast: 5, slow: 20 })
+  const [stockSuggestions, setStockSuggestions] = useState([])
+  const [stockSearchLoading, setStockSearchLoading] = useState(false)
   const [result, setResult] = useState(null)
   const [klines, setKlines] = useState([])
   const [loading, setLoading] = useState(false)
@@ -206,6 +208,21 @@ const BacktestPage = () => {
       if (data.length > 0 && !selectedCode) setSelectedCode(data[0].code)
     })
   }, [])
+
+  // 搜索股票（支持代码或中文名）
+  const handleStockSearch = async (value) => {
+    if (!value || value.length < 1) { setStockSuggestions([]); return }
+    setStockSearchLoading(true)
+    try {
+      const data = await searchApi.search(value)
+      setStockSuggestions(data.results || [])
+    } catch { setStockSuggestions([]) } finally { setStockSearchLoading(false) }
+  }
+
+  const handleStockSelect = (value) => {
+    setSelectedCode(value)
+    setStockSuggestions([])
+  }
 
   const handleRun = async () => {
     if (!selectedCode) { message.warning('请选择股票'); return }
@@ -286,9 +303,19 @@ const BacktestPage = () => {
         <Row gutter={16} align="middle">
           <Col>
             <span>股票：</span>
-            <Select value={selectedCode} onChange={setSelectedCode} style={{ width: 200 }}>
-              {positions.map(p => <Select.Option key={p.code} value={p.code}>{p.name || p.code}</Select.Option>)}
-            </Select>
+            <AutoComplete
+              options={stockSuggestions.map(s => ({ value: s.code, label: `${s.code} ${s.name}` }))}
+              onSearch={handleStockSearch}
+              onSelect={handleStockSelect}
+              value={selectedCode}
+              onChange={setSelectedCode}
+              placeholder="输入代码或名称搜索..."
+              style={{ width: 220 }}
+              notFoundContent={stockSearchLoading ? '搜索中...' : '无结果'}
+              filterOption={(input, option) =>
+                option.label.toLowerCase().includes(input.toLowerCase())
+              }
+            />
           </Col>
           <Col>
             <span>策略：</span>
@@ -299,12 +326,12 @@ const BacktestPage = () => {
           {currentStrategy?.params.map(p => (
             <Col key={p.key}>
               <span>{p.label}：</span>
-              <input
-                type="number"
+              <InputNumber
                 value={params[p.key]}
-                onChange={e => setParams(prev => ({ ...prev, [p.key]: parseInt(e.target.value) || p.default }))}
-                style={{ width: 60, padding: '4px 8px', border: '1px solid #d9d9d9', borderRadius: 6 }}
+                onChange={val => setParams(prev => ({ ...prev, [p.key]: val || p.default }))}
                 min={1}
+                max={250}
+                style={{ width: 80 }}
               />
             </Col>
           ))}
