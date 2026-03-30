@@ -13,6 +13,7 @@ const DEFAULT_CONFIG = {
   take_profit_pct: '15',
   max_positions: '8',
   buy_ratio: '50',
+  max_consecutive_losses: '3',
   strategy_oversold: '1',
   strategy_uptrend: '1',
   strategy_hot: '1',
@@ -92,6 +93,9 @@ function computePaperPositions(config, quotesMap) {
     `, (err, rows) => {
       if (err) { reject(err); return; }
 
+      const today = new Date();
+      const todayYMD = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
       const positions = rows.map(r => {
         const avgCost = r.total_buy_shares > 0 ? r.total_buy_amount / r.total_buy_shares : 0;
         const quote = quotesMap[r.code];
@@ -101,6 +105,12 @@ function computePaperPositions(config, quotesMap) {
         const profitPct = avgCost > 0 ? (currentPrice - avgCost) / avgCost * 100 : 0;
         const stopLossPrice = avgCost * (1 + parseFloat(config.stop_loss_pct) / 100);
         const takeProfitPrice = avgCost * (1 + parseFloat(config.take_profit_pct) / 100);
+
+        // buyDate: YYYY-MM-DD 格式（从 datetime 中提取）
+        const buyDate = r.first_buy_at ? r.first_buy_at.slice(0, 10) : null;
+        // T+1: 当日买入当日不可卖
+        const todayBought = buyDate === todayYMD;
+        const canSell = !buyDate || buyDate < todayYMD;
 
         return {
           code: r.code,
@@ -114,7 +124,9 @@ function computePaperPositions(config, quotesMap) {
           profitPct,
           strategy: r.strategy,
           signalScore: r.signal_score,
-          buyDate: r.first_buy_at,
+          buyDate,
+          todayBought,
+          canSell,
           stopLossPrice,
           takeProfitPrice,
         };
@@ -354,6 +366,43 @@ router.get('/quote/:code', async (req, res) => {
     res.json(data);
   } catch (error) {
     console.error('Paper quote proxy error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/paper/daily — 记录每日净值
+router.post('/daily', async (req, res) => {
+  try {
+    const db = getDb();
+    const { total_value, cash, market_value, total_profit, positions_count } = req.body;
+    const today = new Date().toISOString().slice(0, 10);
+    await new Promise((resolve, reject) => {
+      db.run(
+        `INSERT OR REPLACE INTO paper_daily (date, total_value, cash, market_value, total_profit, positions_count)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [today, total_value, cash, market_value, total_profit, positions_count || 0],
+        function(err) { if (err) reject(err); else resolve(); }
+      );
+    });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Paper daily error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/paper/equity_curve — 获取历史净值
+router.get('/equity_curve', async (req, res) => {
+  try {
+    const db = getDb();
+    const rows = await new Promise((resolve, reject) => {
+      db.all('SELECT * FROM paper_daily ORDER BY date ASC', (err, rows) => {
+        if (err) reject(err); else resolve(rows);
+      });
+    });
+    res.json({ data: rows });
+  } catch (error) {
+    console.error('Paper equity_curve error:', error);
     res.status(500).json({ error: error.message });
   }
 });

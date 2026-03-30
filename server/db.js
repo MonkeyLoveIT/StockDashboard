@@ -69,29 +69,21 @@ export function initDb() {
     }
 
     if (!alreadyMigrated) {
-      // 从旧 positions 表迁移数据到 transactions
-      const insertTx = database.prepare(`
-        INSERT INTO transactions (code, name, type, price, shares, fee, note, traded_at)
-        VALUES (?, ?, 'buy', ?, ?, 0, '迁移自旧持仓', ?)
-      `)
-      database.each('SELECT code, name, cost, shares, created_at FROM positions', (err, row) => {
-        if (err) {
-          console.error('[Migration] Error reading legacy position:', err.message)
-          return
-        }
-        try {
+      // 使用 all() 同步读取全部旧持仓，再同步插入（避免 each() 异步导致迁移不完整）
+      const legacyPositions = database.prepare('SELECT code, name, cost, shares, created_at FROM positions').all()
+      if (legacyPositions.length > 0) {
+        const insertTx = database.prepare(`
+          INSERT INTO transactions (code, name, type, price, shares, fee, note, traded_at)
+          VALUES (?, ?, 'buy', ?, ?, 0, '迁移自旧持仓', ?)
+        `)
+        for (const row of legacyPositions) {
           insertTx.run(row.code, row.name, row.cost, row.shares, row.created_at || new Date().toISOString())
-        } catch (e) {
-          console.error('[Migration] Error inserting:', e.message)
         }
-      }, (err, count) => {
-        if (err) {
-          console.error('[Migration] Migration error:', err.message)
-        } else {
-          console.log(`[Migration] Migrated ${count} legacy positions to transactions`)
-        }
-        database.run(`INSERT OR REPLACE INTO meta (key, value) VALUES ('migrated', '1')`)
-      })
+        console.log(`[Migration] Migrated ${legacyPositions.length} legacy positions to transactions`)
+      } else {
+        console.log('[Migration] No legacy positions to migrate')
+      }
+      database.run(`INSERT OR REPLACE INTO meta (key, value) VALUES ('migrated', '1')`)
     }
 
     // ---- 模拟实盘：风控参数表 ----
@@ -116,6 +108,18 @@ export function initDb() {
         strategy TEXT,
         signal_score INTEGER,
         order_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+
+    // ---- 模拟实盘：每日净值快照 ----
+    database.run(`
+      CREATE TABLE IF NOT EXISTS paper_daily (
+        date TEXT PRIMARY KEY,
+        total_value REAL NOT NULL,
+        cash REAL NOT NULL,
+        market_value REAL NOT NULL,
+        total_profit REAL NOT NULL,
+        positions_count INTEGER DEFAULT 0
       )
     `)
   })

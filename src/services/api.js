@@ -211,4 +211,10 @@ export const paperApi = {
     if (!res.ok) throw new Error('Failed to reset')
     return res.json()
   },
+
+  getEquityCurve: async () => {
+    const res = await fetch(`${API_BASE}/paper/equity_curve`)
+    if (!res.ok) throw new Error('Failed to fetch equity curve')
+    return res.json()
+  },
 }

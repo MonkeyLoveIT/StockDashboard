@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react'
+import ReactECharts from 'echarts-for-react'
 import {
   Table, Button, Card, Row, Col, Statistic, Collapse, Switch, InputNumber,
-  message, Space, Tag, Popconfirm, Empty, Spin, Descriptions
+  message, Space, Tag, Popconfirm, Empty, Spin, Descriptions, Alert, Tooltip
 } from 'antd'
 import {
   ReloadOutlined, DeleteOutlined, InfoCircleOutlined,
@@ -60,6 +61,7 @@ const NUMERIC_FIELDS = [
   { key: 'take_profit_pct', label: '止盈比例（%，正数）', min: 1, max: 100, step: 1 },
   { key: 'max_positions', label: '最大持仓数', min: 1, max: 20, step: 1 },
   { key: 'buy_ratio', label: '每次买入比例（%）', min: 1, max: 100, step: 5 },
+  { key: 'max_consecutive_losses', label: '连续亏损上限（次）', min: 1, max: 10, step: 1 },
 ]
 
 // ============================================================
@@ -75,15 +77,43 @@ export default function PaperTrading() {
   const [ordersPage, setOrdersPage] = useState(1)
   const [saving, setSaving] = useState(false)
   const [resetting, setResetting] = useState(false)
+  const [nextScanSecs, setNextScanSecs] = useState(0)
+  const [equityData, setEquityData] = useState([])
+
+  // Countdown to next intraday scan
+  useEffect(() => {
+    const calcNext = () => {
+      const now = new Date()
+      const h = now.getHours(), m = now.getMinutes(), s = now.getSeconds()
+      const totalMin = h * 60 + m
+      const inSession = (totalMin >= 570 && totalMin <= 690) || (totalMin >= 780 && totalMin <= 900)
+      if (!inSession) { setNextScanSecs(0); return }
+      // Next 5-min boundary
+      const nextMin = Math.ceil((m * 60 + s) / 300) * 5
+      const remainingMin = nextMin - m
+      const remainingSec = remainingMin * 60 - s
+      setNextScanSecs(Math.max(0, remainingSec))
+    }
+    calcNext()
+    const id = setInterval(calcNext, 1000)
+    return () => clearInterval(id)
+  }, [])
+
+  const fmtCountdown = (secs) => {
+    if (!secs) return '–'
+    const m = Math.floor(secs / 60), s = secs % 60
+    return `${m}:${String(s).padStart(2, '0')}`
+  }
 
   const loadAll = async () => {
     setLoading(true)
     try {
-      const [cfg, sum, pos, ord] = await Promise.all([
+      const [cfg, sum, pos, ord, eqCurve] = await Promise.all([
         paperApi.getConfig(),
         paperApi.getSummary(),
         paperApi.getPositions(),
         paperApi.getOrders(1, 20),
+        paperApi.getEquityCurve(),
       ])
       setConfig(cfg)
       setSummary(sum)
@@ -91,6 +121,7 @@ export default function PaperTrading() {
       setOrders(ord.orders || [])
       setOrdersTotal(ord.total || 0)
       setOrdersPage(1)
+      setEquityData(eqCurve.data || [])
     } catch (e) {
       message.error('加载失败: ' + e.message)
     } finally {
@@ -100,10 +131,15 @@ export default function PaperTrading() {
 
   useEffect(() => { loadAll() }, [])
 
+  useEffect(() => {
+    paperApi.getEquityCurve().then(d => setEquityData(d.data || [])).catch(() => {})
+  }, [])
+
   const handleSaveConfig = async () => {
     setSaving(true)
     try {
       await paperApi.updateConfig(config)
+      await loadAll()
       message.success('配置已保存')
     } catch (e) {
       message.error('保存失败: ' + e.message)
@@ -194,10 +230,53 @@ export default function PaperTrading() {
       render: v => v ? <Tag color="blue">{v}</Tag> : '-',
     },
     {
+      title: '状态',
+      key: 'status',
+      render: (_, row) =>
+        row.todayBought ? (
+          <Tag color="orange">今日买入 T+1</Tag>
+        ) : (
+          <Tag color="green">持仓中</Tag>
+        ),
+    },
+    {
       title: '建仓时间',
       dataIndex: 'buyDate',
       key: 'buyDate',
       render: v => v ? v.slice(0, 16).replace('T', ' ') : '-',
+    },
+    {
+      title: 'T+1',
+      key: 't1Status',
+      width: 90,
+      render: (_, row) => {
+        if (row.canSellToday === false) {
+          return <Tag color="error">T+1 限卖</Tag>;
+        }
+        return <Tag color="success">可卖</Tag>;
+      },
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 120,
+      render: (_, row) => {
+        const t1Disabled = row.canSellToday === false;
+        const tip = t1Disabled ? 'T+1规则：当日买入不可卖' : '触发止损/止盈时自动执行';
+        return (
+          <Space size={4}>
+            <Tooltip title={tip}>
+              <Button
+                size="small"
+                danger
+                disabled={t1Disabled}
+              >
+                止损/止盈
+              </Button>
+            </Tooltip>
+          </Space>
+        );
+      },
     },
   ]
 
@@ -269,7 +348,7 @@ export default function PaperTrading() {
   return (
     <div style={{ maxWidth: 1200, margin: '0 auto' }}>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <h2 style={{ margin: 0 }}>📊 模拟实盘</h2>
         <Space>
           <Button icon={<ReloadOutlined />} onClick={loadAll} loading={loading}>刷新</Button>
@@ -285,6 +364,18 @@ export default function PaperTrading() {
           </Popconfirm>
         </Space>
       </div>
+
+      {/* Intraday scan status bar */}
+      <Alert
+        message={
+          nextScanSecs > 0
+            ? `盘中扫描运行中 · 下一轮 ${fmtCountdown(nextScanSecs)}`
+            : '盘中扫描已收盘或未在交易时段'
+        }
+        type="info"
+        showIcon
+        style={{ marginBottom: 20 }}
+      />
 
       <Spin spinning={loading}>
 
@@ -336,6 +427,29 @@ export default function PaperTrading() {
             </Card>
           </Col>
         </Row>
+
+        {/* Equity Curve */}
+        {equityData.length >= 1 && (() => {
+          const equityOption = {
+            title: { text: '模拟净值曲线', textStyle: { fontSize: 14, fontWeight: 600 }, left: 0 },
+            tooltip: { trigger: 'axis', formatter: (p) => `${p[0].name}<br/>总资产: ¥${(p[0].value || 0).toFixed(2)}` },
+            grid: { left: 60, right: 20, top: 40, bottom: 30 },
+            xAxis: { type: 'category', data: equityData.map(d => d.date), axisLabel: { fontSize: 10 } },
+            yAxis: { type: 'value', axisLabel: { formatter: v => `¥${(v/10000).toFixed(0)}万`, fontSize: 10 } },
+            series: [{
+              data: equityData.map(d => d.total_value),
+              type: 'line', smooth: true,
+              areaStyle: { opacity: 0.1 },
+              lineStyle: { color: '#1677ff', width: 2 },
+              itemStyle: { color: '#1677ff' }
+            }]
+          };
+          return (
+            <Card size="small" style={{ marginBottom: 16 }}>
+              <ReactECharts option={equityOption} style={{ height: 220 }} />
+            </Card>
+          );
+        })()}
 
         {/* Risk Config */}
         <Collapse style={{ marginBottom: 24 }} defaultActiveKey={[]}>
