@@ -1,77 +1,109 @@
-// API Service Layer - 统一管理所有后端 API 调用
-
+// API Service Layer — positions 重构为交易流水式
 const API_BASE = '/api'
 
-// Positions API
+// ============================================================
+// Positions / Transactions API
+// ============================================================
 export const positionApi = {
-  // 获取所有持仓
+  // GET /api/positions — 获取持仓汇总（实时计算）
   getAll: async () => {
     const res = await fetch(`${API_BASE}/positions`)
     if (!res.ok) throw new Error('Failed to fetch positions')
     return res.json()
   },
 
-  // 获取单个持仓
+  // GET /api/positions/:id — 获取单笔交易
   getById: async (id) => {
     const res = await fetch(`${API_BASE}/positions/${id}`)
-    if (!res.ok) throw new Error('Failed to fetch position')
+    if (!res.ok) throw new Error('Failed to fetch transaction')
     return res.json()
   },
 
-  // 创建持仓
+  // POST /api/positions — 录入新交易（买入/卖出）
+  // body: { code, name, type: 'buy'|'sell', price, shares, fee?, note?, traded_at? }
   create: async (data) => {
     const res = await fetch(`${API_BASE}/positions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     })
-    if (!res.ok) throw new Error('Failed to create position')
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Unknown error' }))
+      throw new Error(err.error || 'Failed to create transaction')
+    }
     return res.json()
   },
 
-  // 更新持仓
+  // PUT /api/positions/:id — 仅允许修改备注
   update: async (id, data) => {
     const res = await fetch(`${API_BASE}/positions/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     })
-    if (!res.ok) throw new Error('Failed to update position')
+    if (!res.ok) throw new Error('Failed to update transaction')
     return res.json()
   },
 
-  // 删除持仓
+  // DELETE /api/positions/:id — 删除单笔交易
   delete: async (id) => {
     const res = await fetch(`${API_BASE}/positions/${id}`, {
       method: 'DELETE'
     })
+    if (!res.ok) throw new Error('Failed to delete transaction')
+    return res.json()
+  },
+
+  // DELETE /api/positions/code/:code — 清空某只股票所有交易
+  deleteByCode: async (code) => {
+    const res = await fetch(`${API_BASE}/positions/code/${code}`, {
+      method: 'DELETE'
+    })
     if (!res.ok) throw new Error('Failed to delete position')
+    return res.json()
+  },
+
+  // GET /api/positions/history — 获取全部交易流水（分页）
+  getHistory: async (page = 1, pageSize = 50) => {
+    const res = await fetch(`${API_BASE}/positions/history?page=${page}&pageSize=${pageSize}`)
+    if (!res.ok) throw new Error('Failed to fetch transaction history')
+    return res.json()
+  },
+
+  // GET /api/positions/history/:code — 获取某只股票的交易历史
+  getHistoryByCode: async (code) => {
+    const res = await fetch(`${API_BASE}/positions/history/${encodeURIComponent(code)}`)
+    if (!res.ok) throw new Error('Failed to fetch stock history')
     return res.json()
   }
 }
 
-// Quote API - 实时行情
+// ============================================================
+// Quote API — 实时行情
+// ============================================================
 export const quoteApi = {
-  // 获取单只股票行情
   getQuote: async (code) => {
     const res = await fetch(`${API_BASE}/quote/${code}`)
     if (!res.ok) throw new Error('Failed to fetch quote')
     return res.json()
   },
 
-  // 获取多只股票行情
+  // 批量获取多只股票行情
   getQuotes: async (codes) => {
-    // 串行获取每只股票的行情
-    const results = await Promise.all(
-      codes.map(code => quoteApi.getQuote(code).catch(err => ({ code, error: err.message })))
+    const results = await Promise.allSettled(
+      codes.map(code => quoteApi.getQuote(code))
     )
     return results
+      .filter(r => r.status === 'fulfilled')
+      .map(r => r.value)
+      .filter(q => q && !q.error)
   }
 }
 
+// ============================================================
 // K-Line API
+// ============================================================
 export const klineApi = {
-  // 获取 K 线数据
   // period: 1min/5min/10min/15min/30min/60min/d/w/m
   // fq: 0(不复权)/1(前复权)/2(后复权)
   getKline: async (code, period = 'd', fq = '1') => {
@@ -81,7 +113,9 @@ export const klineApi = {
   }
 }
 
-// Search API - 搜索股票
+// ============================================================
+// Search API — 搜索股票
+// ============================================================
 export const searchApi = {
   search: async (code) => {
     const res = await fetch(`${API_BASE}/search?code=${encodeURIComponent(code)}`)
@@ -90,7 +124,9 @@ export const searchApi = {
   }
 }
 
-// Market Overview API - 大盘指数
+// ============================================================
+// Market Overview API — 大盘指数
+// ============================================================
 export const marketApi = {
   getOverview: async () => {
     const res = await fetch(`${API_BASE}/market/overview`)
@@ -99,7 +135,9 @@ export const marketApi = {
   }
 }
 
-// Notify API - 飞书提醒推送
+// ============================================================
+// Notify API — 飞书提醒推送
+// ============================================================
 export const notifyApi = {
   send: async ({ title, content }) => {
     const res = await fetch(`${API_BASE}/notify/notify`, {
@@ -112,16 +150,17 @@ export const notifyApi = {
   }
 }
 
-// Screener API - 股票筛选
+// ============================================================
+// Screener API — 股票筛选
+// ============================================================
 export const screenerApi = {
-  // 新一代筛选引擎（支持多模式交集）
   run: async (modes = ['oversold_rebound'], limit = 50) => {
     const modeParams = (Array.isArray(modes) ? modes : [modes]).map(m => `mode=${m}`).join('&')
     const res = await fetch(`${API_BASE}/screener/run?${modeParams}&limit=${limit}`)
     if (!res.ok) throw new Error('Failed to screen stocks')
     return res.json()
   },
-  // 今日热门
+
   hot: async (limit = 100) => {
     const res = await fetch(`${API_BASE}/screener/hot?limit=${limit}`)
     if (!res.ok) throw new Error('Failed to fetch hot stocks')

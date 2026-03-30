@@ -5,10 +5,21 @@ const DEFAULT_GROUP = { id: 'default', name: '默认分组' }
 
 const usePositionStore = create(persist(
   (set, get) => ({
-    positions: [],
-    quotes: {},     // { code: quoteData }
-    watchList: [],   // 兼容旧版 flat list（首次启动后迁移）
-    watchGroups: [], // [{ id, name, codes: string[] }]
+    // ---- 持仓数据（交易流水式，由 API 实时汇总）----
+    positions: [],        // [{ code, name, shares, cost, currentPrice, profit, profitPct, todayProfit, todayProfitPct, positionPct, ... }]
+    transactions: [],     // [{ id, code, name, type, price, shares, fee, note, traded_at }]
+
+    // ---- 行情数据 ----
+    quotes: {},           // { code: quoteData }
+    quotesLoading: false,
+
+    // ---- 自选股分组 ----
+    watchList: [],
+    watchGroups: [],
+
+    // ---- 加载状态 ----
+    loading: false,
+    error: null,
 
     // ---- 迁移：首次把 flat watchList 迁入分组 ----
     _ensureGroups() {
@@ -21,7 +32,11 @@ const usePositionStore = create(persist(
       }
     },
 
-    // ---- 持仓管理 ----
+    // ============================================================
+    // 持仓管理（交易流水式）
+    // ============================================================
+
+    // GET /api/positions — 获取汇总后的持仓列表
     fetchPositions: async (positionApi) => {
       set({ loading: true, error: null })
       try {
@@ -34,23 +49,47 @@ const usePositionStore = create(persist(
       }
     },
 
-    addPosition: async (positionApi, data) => {
+    // GET /api/positions/history — 获取交易流水
+    fetchTransactions: async (positionApi, page = 1, pageSize = 50) => {
+      set({ loading: true, error: null })
       try {
-        const newPosition = await positionApi.create(data)
-        set(state => ({ positions: [newPosition, ...state.positions] }))
-        return newPosition
+        const result = await positionApi.getHistory(page, pageSize)
+        set({ transactions: result.data || result, loading: false })
+        return result
+      } catch (error) {
+        set({ error: error.message, loading: false })
+        throw error
+      }
+    },
+
+    // GET /api/positions/history/:code — 获取某只股票的交易历史
+    fetchStockHistory: async (positionApi, code) => {
+      try {
+        const history = await positionApi.getHistoryByCode(code)
+        return history
       } catch (error) {
         set({ error: error.message })
         throw error
       }
     },
 
-    updatePosition: async (positionApi, id, data) => {
+    // POST /api/positions — 录入新交易（买入/卖出）
+    addTransaction: async (positionApi, data) => {
+      try {
+        const tx = await positionApi.create(data)
+        // 重新获取最新持仓汇总
+        await get().fetchPositions(positionApi)
+        return tx
+      } catch (error) {
+        set({ error: error.message })
+        throw error
+      }
+    },
+
+    // PUT /api/positions/:id — 更新交易备注
+    updateTransaction: async (positionApi, id, data) => {
       try {
         const updated = await positionApi.update(id, data)
-        set(state => ({
-          positions: state.positions.map(p => p.id === id ? updated : p)
-        }))
         return updated
       } catch (error) {
         set({ error: error.message })
@@ -58,14 +97,47 @@ const usePositionStore = create(persist(
       }
     },
 
-    deletePosition: async (positionApi, id) => {
+    // DELETE /api/positions/:id — 删除单笔交易
+    deleteTransaction: async (positionApi, id) => {
       try {
         await positionApi.delete(id)
-        set(state => ({ positions: state.positions.filter(p => p.id !== id) }))
+        // 重新获取最新持仓汇总
+        await get().fetchPositions(positionApi)
       } catch (error) {
         set({ error: error.message })
         throw error
       }
+    },
+
+    // DELETE /api/positions/code/:code — 清空某只股票所有交易（删除持仓）
+    deletePositionByCode: async (positionApi, code) => {
+      try {
+        await positionApi.deleteByCode(code)
+        // 重新获取最新持仓汇总
+        await get().fetchPositions(positionApi)
+      } catch (error) {
+        set({ error: error.message })
+        throw error
+      }
+    },
+
+    // ---- 兼容旧版 API（迁移后不再推荐使用）----
+    addPosition: async (positionApi, data) => {
+      // 将旧版 data 映射为 buy 交易
+      return get().addTransaction(positionApi, {
+        ...data,
+        type: 'buy',
+        price: data.cost,
+        shares: data.shares,
+      })
+    },
+
+    updatePosition: async (positionApi, id, data) => {
+      return get().updateTransaction(positionApi, id, data)
+    },
+
+    deletePosition: async (positionApi, id) => {
+      return get().deleteTransaction(positionApi, id)
     },
 
     // ---- 行情管理 ----
@@ -79,7 +151,9 @@ const usePositionStore = create(persist(
       set(state => ({ quotes: { ...state.quotes, ...quotesMap } }))
     },
 
-    // ---- 分组管理 ----
+    setQuotesLoading: (val) => set({ quotesLoading: val }),
+
+    // ---- 自选股分组管理 ----
     addWatchGroup: (name) => {
       const id = Date.now().toString()
       set(state => ({
@@ -101,7 +175,6 @@ const usePositionStore = create(persist(
       }))
     },
 
-    // code 加入指定分组（默认加入第一个分组）
     addToWatchList: (code, groupId) => {
       set(state => {
         const groups = state.watchGroups?.length ? [...state.watchGroups] : [{ ...DEFAULT_GROUP }]
@@ -122,13 +195,14 @@ const usePositionStore = create(persist(
           const idx = groups.findIndex(g => g.id === groupId)
           if (idx >= 0) groups[idx] = { ...groups[idx], codes: groups[idx].codes.filter(c => c !== code) }
         } else {
-          // 从所有分组移除
           groups.forEach(g => { g.codes = g.codes.filter(c => c !== code) })
         }
-        // 清理无股票的分组（保留至少默认分组）
         if (groups.length > 1) {
           const filtered = groups.filter(g => g.codes.length > 0 || g.id === 'default')
-          return { watchGroups: filtered.length ? filtered : [{ ...DEFAULT_GROUP }], quotes: Object.fromEntries(Object.entries(state.quotes).filter(([k]) => !groups.some(g => g.codes.includes(k)))) }
+          return {
+            watchGroups: filtered.length ? filtered : [{ ...DEFAULT_GROUP }],
+            quotes: Object.fromEntries(Object.entries(state.quotes).filter(([k]) => !groups.some(g => g.codes.includes(k))))
+          }
         }
         return {
           watchGroups: groups,
@@ -137,7 +211,6 @@ const usePositionStore = create(persist(
       })
     },
 
-    // 把股票从源分组移动到目标分组
     moveStockToGroup: (code, fromGroupId, toGroupId) => {
       set(state => {
         const groups = [...(state.watchGroups || [{ ...DEFAULT_GROUP }])]

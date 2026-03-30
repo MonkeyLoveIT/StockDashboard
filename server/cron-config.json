@@ -5,7 +5,10 @@
       "schedule": "55 8 * * 1-5",
       "modes": [
         "oversold_rebound",
-        "uptrend"
+        "uptrend",
+        "hot_money",
+        "long_value",
+        "breakthrough"
       ],
       "limit": 20,
       "enabled": true
@@ -15,7 +18,10 @@
       "schedule": "35 12 * * 1-5",
       "modes": [
         "hot_money",
-        "breakthrough"
+        "breakthrough",
+        "uptrend",
+        "oversold_rebound",
+        "long_value"
       ],
       "limit": 20,
       "enabled": true
