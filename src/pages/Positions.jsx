@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import {
-  Table, Button, Modal, Form, InputNumber, Popconfirm, message,
+  Table, Button, Modal, Form, Input, InputNumber, Popconfirm, message,
   Space, Tag, Tooltip, AutoComplete, Card, Row, Col, Statistic,
   Collapse, Select, DatePicker, Empty
 } from 'antd'
@@ -36,7 +36,7 @@ const formatShares = (v) => {
 // ============================================================
 // 持仓概览卡片
 // ============================================================
-const OverviewCard = ({ positions }) => {
+const OverviewCard = ({ positions, masked }) => {
   const totalAmount = positions.reduce((sum, p) => sum + (p.currentAmount || 0), 0)
   const totalProfit = positions.reduce((sum, p) => sum + (p.profit || 0), 0)
   const totalCostAmount = positions.reduce((sum, p) => sum + (p.costAmount || 0), 0)
@@ -45,26 +45,26 @@ const OverviewCard = ({ positions }) => {
   const todayProfitPct = positions.reduce((sum, p) => {
     const prev = p.prevClose || p.currentPrice
     const base = prev * p.shares
-    return sum + (base > 0 ? ((p.currentPrice - prev) / prev) * 100 * (p.currentAmount / base)) : 0)
+    return sum + (base > 0 ? ((p.currentPrice - prev) / prev) * 100 * (p.currentAmount / base) : 0)
   }, 0)
 
   const cards = [
     {
       label: '总持仓市值',
-      value: formatMoney(totalAmount),
+      value: masked ? '******' : formatMoney(totalAmount),
       color: '#374151'
     },
     {
       label: '持仓盈亏',
-      value: formatMoney(totalProfit),
-      sub: formatPct(totalProfitPct),
+      value: masked ? '******' : formatMoney(totalProfit),
+      sub: masked ? null : formatPct(totalProfitPct),
       color: profitColor(totalProfit),
       sign: totalProfit >= 0 ? '+' : '-'
     },
     {
       label: '当日盈亏',
-      value: formatMoney(todayProfit),
-      sub: formatPct(todayProfitPct),
+      value: masked ? '******' : formatMoney(todayProfit),
+      sub: masked ? null : formatPct(todayProfitPct),
       color: profitColor(todayProfit),
       sign: todayProfit >= 0 ? '+' : '-'
     },
@@ -604,7 +604,7 @@ const Positions = () => {
         const price = q && !q.error ? q.price : r.currentPrice
         return (
           <span style={{ fontWeight: 600 }}>
-            {masked ? '******' : `¥${price?.toFixed(2) || '-'}`}
+            {`¥${price?.toFixed(2) || '-'}`}
           </span>
         )
       }
@@ -737,7 +737,7 @@ const Positions = () => {
       </div>
 
       {/* 持仓概览卡片 */}
-      <OverviewCard positions={positions} />
+      <OverviewCard positions={positions} masked={masked} />
 
       {/* 持仓列表 */}
       {positions.length === 0 && !loading ? (

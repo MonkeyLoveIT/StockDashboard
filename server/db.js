@@ -17,56 +17,59 @@ export function getDb() {
 export function initDb() {
   const database = getDb()
 
-  // ---- 新增：股票主表（名称缓存）----
-  database.run(`
-    CREATE TABLE IF NOT EXISTS stocks (
-      code TEXT PRIMARY KEY,
-      name TEXT
-    )
-  `)
+  // 使用 serialize 确保所有初始化语句顺序执行
+  database.serialize(() => {
+    // ---- 新增：股票主表（名称缓存）----
+    database.run(`
+      CREATE TABLE IF NOT EXISTS stocks (
+        code TEXT PRIMARY KEY,
+        name TEXT
+      )
+    `)
 
-  // ---- 新增：交易记录表（买/卖流水）----
-  database.run(`
-    CREATE TABLE IF NOT EXISTS transactions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      code TEXT NOT NULL,
-      name TEXT,
-      type TEXT NOT NULL CHECK(type IN ('buy', 'sell')),
-      price REAL NOT NULL,
-      shares INTEGER NOT NULL,
-      fee REAL DEFAULT 0,
-      note TEXT,
-      traded_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `)
+    // ---- 新增：交易记录表（买/卖流水）----
+    database.run(`
+      CREATE TABLE IF NOT EXISTS transactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        code TEXT NOT NULL,
+        name TEXT,
+        type TEXT NOT NULL CHECK(type IN ('buy', 'sell')),
+        price REAL NOT NULL,
+        shares INTEGER NOT NULL,
+        fee REAL DEFAULT 0,
+        note TEXT,
+        traded_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
 
-  // ---- 旧版 positions 表（保留，只用于迁移后兼容）----
-  database.run(`
-    CREATE TABLE IF NOT EXISTS positions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      code TEXT NOT NULL,
-      name TEXT,
-      cost REAL NOT NULL,
-      shares INTEGER NOT NULL,
-      position_pct REAL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `)
+    // ---- 旧版 positions 表（保留，只用于迁移后兼容）----
+    database.run(`
+      CREATE TABLE IF NOT EXISTS positions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        code TEXT NOT NULL,
+        name TEXT,
+        cost REAL NOT NULL,
+        shares INTEGER NOT NULL,
+        position_pct REAL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
 
-  // ---- 迁移：先创建 meta 表，再检查是否已迁移 ----
-  database.run(`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)`)
-  let alreadyMigrated = false
-  try {
-    const row = database.prepare('SELECT value FROM meta WHERE key = ?').get('migrated')
-    alreadyMigrated = row && row.value === '1'
-  } catch (_) {
-    alreadyMigrated = false
-  }
+    // ---- 迁移：先创建 meta 表，再检查是否已迁移 ----
+    database.run(`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)`)
 
-  if (!alreadyMigrated) {
-    // 使用 serialize 确保同步执行（sqlite3 的 serialize/defer 包装）
-    database.serialize(() => {
+    // 检查是否已迁移
+    let alreadyMigrated = false
+    try {
+      const row = database.prepare('SELECT value FROM meta WHERE key = ?').get('migrated')
+      alreadyMigrated = row && row.value === '1'
+    } catch (_) {
+      alreadyMigrated = false
+    }
+
+    if (!alreadyMigrated) {
+      // 从旧 positions 表迁移数据到 transactions
       const insertTx = database.prepare(`
         INSERT INTO transactions (code, name, type, price, shares, fee, note, traded_at)
         VALUES (?, ?, 'buy', ?, ?, 0, '迁移自旧持仓', ?)
@@ -89,8 +92,8 @@ export function initDb() {
         }
         database.run(`INSERT OR REPLACE INTO meta (key, value) VALUES ('migrated', '1')`)
       })
-    })
-  }
+    }
+  })
 
   console.log('Database initialized successfully')
   return database
