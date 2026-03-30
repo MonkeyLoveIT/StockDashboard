@@ -9,6 +9,7 @@ import TacticPage from './pages/TacticPage'
 import RecommendPage from './pages/RecommendPage'
 import AlertsPage from './pages/AlertsPage'
 import BacktestPage from './pages/BacktestPage'
+import PaperTrading from './pages/PaperTrading'
 
 const { Header, Content } = Layout
 
@@ -20,7 +21,8 @@ const items = [
   { key: '/tactics', label: <Link to="/tactics">做T推荐</Link> },
   { key: '/alerts', label: <Link to="/alerts">价格提醒</Link> },
   { key: '/backtest', label: <Link to="/backtest">策略回测</Link> },
-  { key: '/recommend', label: <Link to="/recommend">股票推荐</Link> }
+  { key: '/recommend', label: <Link to="/recommend">股票推荐</Link> },
+  { key: '/paper', label: <Link to="/paper">模拟实盘</Link> }
 ]
 
 function App() {
@@ -43,6 +45,7 @@ function App() {
             <Route path="/alerts" element={<AlertsPage />} />
             <Route path="/backtest" element={<BacktestPage />} />
             <Route path="/recommend" element={<RecommendPage />} />
+            <Route path="/paper" element={<PaperTrading />} />
           </Routes>
         </Content>
       </Layout>

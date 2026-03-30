@@ -93,6 +93,31 @@ export function initDb() {
         database.run(`INSERT OR REPLACE INTO meta (key, value) VALUES ('migrated', '1')`)
       })
     }
+
+    // ---- 模拟实盘：风控参数表 ----
+    database.run(`
+      CREATE TABLE IF NOT EXISTS paper_config (
+        key TEXT PRIMARY KEY,
+        value TEXT
+      )
+    `)
+
+    // ---- 模拟实盘：虚拟成交记录表 ----
+    database.run(`
+      CREATE TABLE IF NOT EXISTS paper_orders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        code TEXT NOT NULL,
+        name TEXT,
+        type TEXT NOT NULL CHECK(type IN ('buy', 'sell', 'stop_loss', 'take_profit')),
+        price REAL NOT NULL,
+        shares INTEGER NOT NULL,
+        amount REAL NOT NULL,
+        reason TEXT,
+        strategy TEXT,
+        signal_score INTEGER,
+        order_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
   })
 
   console.log('Database initialized successfully')

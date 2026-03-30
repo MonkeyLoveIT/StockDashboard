@@ -10,6 +10,8 @@ import marketRoutes from './routes/market.js';
 import notifyRoutes from './routes/notify.js';
 import cronConfigRoutes from './routes/cronConfig.js';
 import { startCron, loadConfig } from './cron.js';
+import paperRoutes from './routes/paper.js';
+import { registerPaperEngine } from './paperEngine.js';
 
 const app = express();
 const PORT = 3001;
@@ -30,6 +32,7 @@ app.use('/api/screener', screenerRoutes);
 app.use('/api/market', marketRoutes);
 app.use('/api/notify', notifyRoutes);
 app.use('/api/cron', cronConfigRoutes);
+app.use('/api/paper', paperRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -41,4 +44,7 @@ app.listen(PORT, () => {
   // Start cron scheduler
   const schedules = loadConfig();
   startCron(schedules);
+
+  // Register paper trading engine
+  registerPaperEngine();
 });

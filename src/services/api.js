@@ -167,3 +167,48 @@ export const screenerApi = {
     return res.json()
   }
 }
+
+// ============================================================
+// Paper Trading API — 模拟实盘
+// ============================================================
+export const paperApi = {
+  getConfig: async () => {
+    const res = await fetch(`${API_BASE}/paper/config`)
+    if (!res.ok) throw new Error('Failed to fetch config')
+    return res.json()
+  },
+
+  updateConfig: async (updates) => {
+    const res = await fetch(`${API_BASE}/paper/config`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates)
+    })
+    if (!res.ok) throw new Error('Failed to update config')
+    return res.json()
+  },
+
+  getPositions: async () => {
+    const res = await fetch(`${API_BASE}/paper/positions`)
+    if (!res.ok) throw new Error('Failed to fetch positions')
+    return res.json()
+  },
+
+  getOrders: async (page = 1, pageSize = 20) => {
+    const res = await fetch(`${API_BASE}/paper/orders?page=${page}&pageSize=${pageSize}`)
+    if (!res.ok) throw new Error('Failed to fetch orders')
+    return res.json()
+  },
+
+  getSummary: async () => {
+    const res = await fetch(`${API_BASE}/paper/summary`)
+    if (!res.ok) throw new Error('Failed to fetch summary')
+    return res.json()
+  },
+
+  reset: async () => {
+    const res = await fetch(`${API_BASE}/paper/reset`, { method: 'POST' })
+    if (!res.ok) throw new Error('Failed to reset')
+    return res.json()
+  },
+}
